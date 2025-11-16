@@ -1,15 +1,19 @@
 # database.py
+import os
 from sqlalchemy import create_engine, Column, Integer, String, Text, DateTime
 from sqlalchemy.ext.declarative import declarative_base
 from sqlalchemy.orm import sessionmaker
 
-# Replace with your MySQL credentials
-DB_USER = "root"
-DB_PASSWORD = "root123"
-DB_HOST = "localhost"
-DB_NAME = "quiz_db"
+# Prefer DATABASE_URL from environment (Render will provide). If not present, fall back to local MySQL.
+DATABASE_URL = os.getenv("DATABASE_URL")
 
-DATABASE_URL = f"mysql+pymysql://{DB_USER}:{DB_PASSWORD}@{DB_HOST}/{DB_NAME}"
+if not DATABASE_URL:
+    # Local development fallback (your local MySQL)
+    DB_USER = os.getenv("DB_USER", "root")
+    DB_PASSWORD = os.getenv("DB_PASSWORD", "root123")
+    DB_HOST = os.getenv("DB_HOST", "localhost")
+    DB_NAME = os.getenv("DB_NAME", "quiz_db")
+    DATABASE_URL = f"mysql+pymysql://{DB_USER}:{DB_PASSWORD}@{DB_HOST}/{DB_NAME}"
 
 engine = create_engine(DATABASE_URL, echo=True)
 SessionLocal = sessionmaker(bind=engine)
@@ -24,5 +28,4 @@ class Quiz(Base):
     scraped_content = Column(Text)
     full_quiz_data = Column(Text)
 
-# Create tables
 Base.metadata.create_all(bind=engine)

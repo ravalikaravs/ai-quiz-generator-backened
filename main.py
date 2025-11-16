@@ -5,24 +5,23 @@ from fastapi.responses import JSONResponse
 from sqlalchemy.orm import Session
 from datetime import datetime
 import json
+import re
+from database import SessionLocal, Quiz
+from scrapper import scrape_wikipedia
+from llm_quiz_generator import generate_quiz
 
-from database import SessionLocal, Quiz  # Your SQLAlchemy setup
-from scrapper import scrape_wikipedia      # Scraper function
-from llm_quiz_generator import generate_quiz  # Your Gemini LLM generator
-
-# Initialize FastAPI
 app = FastAPI()
 
-# CORS middleware to allow React frontend
+# CORS
 app.add_middleware(
     CORSMiddleware,
-    allow_origins=["http://localhost:5173", "http://127.0.0.1:5173"],
+    allow_origins=["http://localhost:5173", "http://127.0.0.1:5173","https://ai-quiz-generator-backened.onrender.com"],
     allow_credentials=True,
     allow_methods=["*"],
     allow_headers=["*"],
 )
 
-# Dependency to get DB session
+# DB Session
 def get_db():
     db = SessionLocal()
     try:
@@ -30,16 +29,83 @@ def get_db():
     finally:
         db.close()
 
-# Root endpoint
 @app.get("/")
 def root():
     return {"message": "AI Quiz Generator backend running."}
 
-# POST endpoint: Generate Quiz
 @app.post("/generate_quiz")
 def generate_quiz_api(request: dict, db: Session = Depends(get_db)):
     url = request.get("url")
     if not url:
         raise HTTPException(status_code=400, detail="URL is required")
 
-    # Sc
+    try:
+        # Scrape Wikipedia
+        title, scraped_text = scrape_wikipedia(url)
+
+        if not scraped_text:
+            return JSONResponse(
+                status_code=400,
+                content={"status": "error", "message": "Failed to scrape content"}
+            )
+        quiz_data = generate_quiz(scraped_text)
+
+
+        # Save to DB
+        new_quiz = Quiz(
+            url=url,
+            title=title,
+            scraped_content = scraped_text,
+            full_quiz_data = json.dumps(quiz_data),
+            date_generated=datetime.now()
+        )
+        db.add(new_quiz)
+        db.commit()
+
+        return {
+            "status": "success",
+            "quiz_id": new_quiz.id,
+            "quiz": quiz_data
+        }
+
+    except Exception as e:
+        print("Error:", e)
+        return JSONResponse(
+            status_code=500,
+            content={"status": "error", "message": str(e)}
+        )
+@app.get("/history")
+def get_history(db: Session = Depends(get_db)):
+    try:
+        quizzes = db.query(Quiz).order_by(Quiz.date_generated.desc()).all()
+        result = [
+            {
+                "id": q.id,
+                "title": q.title,
+                "url": q.url,
+                "date_generated": q.date_generated
+            }
+            for q in quizzes
+        ]
+        return {"status": "success", "history": result}
+    except Exception as e:
+        return JSONResponse(
+            status_code=500,
+            content={"status": "error", "message": str(e)}
+        )
+
+@app.get("/quiz/{quiz_id}")
+def get_quiz(quiz_id: int, db: Session = Depends(get_db)):
+    try:
+        quiz = db.query(Quiz).filter(Quiz.id == quiz_id).first()
+        if not quiz:
+            raise HTTPException(status_code=404, detail="Quiz not found")
+        return {
+            "status": "success",
+            "quiz": json.loads(quiz.full_quiz_data)
+        }
+    except Exception as e:
+        return JSONResponse(
+            status_code=500,
+            content={"status": "error", "message": str(e)}
+        )

@@ -5,6 +5,11 @@ class Question(BaseModel):
     question: str
     options: List[str]
     answer: str
+    difficulty: str
+    explanation: str
 
 class QuizSchema(BaseModel):
-    questions: List[Question]
+    title: str
+    summary: str
+    quiz: List[Question]
+    related_topics: List[str]
